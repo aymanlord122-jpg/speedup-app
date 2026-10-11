@@ -22,7 +22,6 @@ jobs:
       - name: Copy SpeedUp files
         shell: cmd
         run: |
-          copy /y src\pubspec.yaml speedup_app\pubspec.yaml
           copy /y src\main.dart speedup_app\lib\main.dart
           if exist speedup_app\test\widget_test.dart del /q speedup_app\test\widget_test.dart
       - name: Patch Android
@@ -97,6 +96,9 @@ jobs:
         shell: pwsh
         run: |
           Set-Location speedup_app
+          flutter pub add flutter_background_service flutter_local_notifications network_info_plus wakelock_plus
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          Get-Content pubspec.yaml
           flutter pub get
           if ($LASTEXITCODE -ne 0) { exit 1 }
           flutter build apk --release --split-per-abi
