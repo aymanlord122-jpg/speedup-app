@@ -27,7 +27,72 @@ jobs:
           if exist speedup_app\test\widget_test.dart del /q speedup_app\test\widget_test.dart
       - name: Patch Android
         shell: pwsh
-        run: ./src/patch_android.ps1 -Project speedup_app
+        run: |
+          $Project = 'speedup_app'
+          $ErrorActionPreference = 'Stop'
+          $utf8 = New-Object System.Text.UTF8Encoding($false)
+          function Read-Text([string]$p) { [System.IO.File]::ReadAllText((Resolve-Path $p).Path, $utf8) }
+          function Write-Text([string]$p, [string]$t) { [System.IO.File]::WriteAllText((Resolve-Path $p).Path, $t, $utf8) }
+
+          # ---------- AndroidManifest.xml ----------
+          $mf = Join-Path $Project 'android\app\src\main\AndroidManifest.xml'
+          $x = Read-Text $mf
+
+          if ($x -notmatch 'FOREGROUND_SERVICE_DATA_SYNC') {
+            $names = @(
+              'android.permission.INTERNET',
+              'android.permission.ACCESS_WIFI_STATE',
+              'android.permission.ACCESS_NETWORK_STATE',
+              'android.permission.FOREGROUND_SERVICE',
+              'android.permission.FOREGROUND_SERVICE_DATA_SYNC',
+              'android.permission.POST_NOTIFICATIONS',
+              'android.permission.WAKE_LOCK'
+            )
+            $lines = foreach ($n in $names) { '    <uses-permission android:name="' + $n + '"/>' }
+            $block = ($lines -join "`r`n") + "`r`n`r`n    "
+            $x = $x.Replace('<application', $block + '<application')
+          }
+
+          if ($x -notmatch 'usesCleartextTraffic') {
+            $x = $x.Replace('<application', '<application android:usesCleartextTraffic="true"')
+          }
+
+          $re = New-Object System.Text.RegularExpressions.Regex 'android:label="[^"]*"'
+          $x = $re.Replace($x, 'android:label="SpeedUp"', 1)
+
+          if ($x -notmatch 'flutter_background_service.BackgroundService') {
+            $svc = '    <service android:name="id.flutter.flutter_background_service.BackgroundService" android:foregroundServiceType="dataSync" android:exported="true"/>' + "`r`n    "
+            $x = $x.Replace('</application>', $svc + '</application>')
+          }
+          Write-Text $mf $x
+
+          # ---------- build.gradle(.kts) ----------
+          $kts = Join-Path $Project 'android\app\build.gradle.kts'
+          $grv = Join-Path $Project 'android\app\build.gradle'
+
+          if (Test-Path $kts) {
+            $g = Read-Text $kts
+            $g = [regex]::Replace($g, 'minSdk\s*=\s*flutter\.minSdkVersion', 'minSdk = maxOf(23, flutter.minSdkVersion)')
+            if ($g -notmatch 'isCoreLibraryDesugaringEnabled') {
+              $g = [regex]::Replace($g, 'compileOptions\s*\{', "compileOptions {`r`n        isCoreLibraryDesugaringEnabled = true")
+              $g += "`r`n`r`ndependencies {`r`n    coreLibraryDesugaring(`"com.android.tools:desugar_jdk_libs:2.0.4`")`r`n}`r`n"
+            }
+            Write-Text $kts $g
+          }
+          elseif (Test-Path $grv) {
+            $g = Read-Text $grv
+            $g = [regex]::Replace($g, 'minSdkVersion\s+flutter\.minSdkVersion', 'minSdkVersion Math.max(23, flutter.minSdkVersion)')
+            if ($g -notmatch 'coreLibraryDesugaringEnabled') {
+              $g = [regex]::Replace($g, 'compileOptions\s*\{', "compileOptions {`r`n        coreLibraryDesugaringEnabled true")
+              $g += "`r`n`r`ndependencies {`r`n    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.0.4'`r`n}`r`n"
+            }
+            Write-Text $grv $g
+          }
+          else {
+            throw 'build.gradle was not found'
+          }
+
+          Write-Host 'Android files patched.'
       - name: Build APK
         shell: cmd
         run: |
