@@ -96,7 +96,7 @@ jobs:
         shell: pwsh
         run: |
           Set-Location speedup_app
-          flutter pub add flutter_background_service flutter_local_notifications network_info_plus wakelock_plus
+          flutter pub add flutter_background_service:^5.0.10 flutter_local_notifications:^17.2.2 network_info_plus:^6.0.0 wakelock_plus:^1.2.8
           if ($LASTEXITCODE -ne 0) { exit 1 }
           Get-Content pubspec.yaml
           flutter pub get
